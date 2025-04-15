@@ -92,18 +92,18 @@ class SpectralClusteringNJW:
         self.compute_similarity_matrix()
         """ 5.KORAK """
         Z = self.compute_k_eigenvectors()
-        kmeans = KMeans(n_clusters=self.max_clusters)
+        """ kmeans = KMeans(n_clusters=self.max_clusters)
         labels = kmeans.fit_predict(Z)
         self.clusters = labels
-        
-        """ #custom KMeanss
+        return self.clusters.reshape((self.rows, self.cols)) """
+        #custom KMeanss
         customKmeans = KMeansCustom(self.max_clusters, Z)
         self.clusters = customKmeans.pipeline()
-        return np.array(self.clusters).reshape((self.rows, self.cols)) """
+        return np.array(self.clusters).reshape((self.rows, self.cols))
         
         
         
-        return self.clusters.reshape((self.rows, self.cols))
+        
     
     
     #---------------------------------- average color ---------------------------------------
