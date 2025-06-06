@@ -8,7 +8,7 @@ from sklearn.metrics.pairwise import rbf_kernel
 from KMeansAlogrithm import KMeansCustom
 
 
-class SpectralClusteringNJW:
+class SpectralClusteringKVV:
     def __init__(self, sigma_I, sigma_X, r, max_clusters):
         self.sigma_I = sigma_I #intsnsitiy scale
         self.sigma_X = sigma_X #spatial sclae
@@ -68,7 +68,7 @@ class SpectralClusteringNJW:
             W = self.W
         D = np.diag(np.sum(W, axis=1))
         D_inv_sqrt = np.diag([1.0 / np.sqrt(d) if d != 0 else 0 for d in np.diag(D)]) # D^1/2
-        return D_inv_sqrt @ (D - W) @ D_inv_sqrt
+        return np.eye(self.n) - D_inv_sqrt @ W @ D_inv_sqrt
     
 
     def compute_k_eigenvectors(self):
@@ -141,5 +141,8 @@ class SpectralClusteringNJW:
         plt.tight_layout()
         plt.show()
         
+        
+        
+
         
         

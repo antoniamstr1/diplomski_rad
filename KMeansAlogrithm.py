@@ -36,6 +36,12 @@ class KMeansCustom:
                     centroids.append(self.data[j])
                     break
         return np.array(centroids)
+    
+    def initialize_centroids_basic_algorithm(self):
+        indices = np.random.choice(len(self.data), self.n_clusters, replace=False)
+        centroids = self.data[indices]
+        return centroids
+
 
     def assign_clusters(self):
         clusters = []
@@ -71,13 +77,24 @@ class KMeansCustom:
         #self.centroids = np.random.uniform(low=min_vals, high=max_vals, size=(self.n_clusters, len(self.data[0])))
         self.centroids = self.initialize_centroids()
         old_centroids = self.centroids.copy()
+
+        self.centroid_history = [old_centroids.copy()]   # store initial centroids
+        self.cluster_history = []
+
         while True:
             self.assign_clusters()
+            self.cluster_history.append(self.clusters.copy())  # store current clustering
+
             self.update_centroids()
+            self.centroid_history.append(self.centroids.copy())  # store updated centroids
+
             if np.allclose(old_centroids, self.centroids):
                 break
+
             old_centroids = self.centroids.copy()
-        return self.clusters
+
+        return self.clusters, self.centroid_history
+
     
     
     """ SEGMENTACIJA SLIKA """
