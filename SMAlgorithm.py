@@ -1,14 +1,15 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from skimage import io
-
+from scipy.spatial.distance import pdist, squareform
 import matplotlib.colors as mcolors
 
 import warnings
 warnings.filterwarnings("ignore")
 
 class SpectralClusteringSM:
-    def __init__(self, sigma_I, sigma_X, r, lanczos_k, l, ncut_max):
+    def __init__(self, sigma_X, lanczos_k=None, l=None, ncut_max=None, sigma_I=None, r=None):
+        
         self.sigma_I = sigma_I #intsnsitiy scale
         self.sigma_X = sigma_X #spatial sclae
         self.r = r # spatial cutoff
@@ -17,6 +18,11 @@ class SpectralClusteringSM:
         self.ncut_max = ncut_max  # threshold za splitting
         self.current_cluster_id = 0
         #self.max_clusters = max_clusters
+        #vrijednosti za ispits
+        self.all_ncut_values = []  # za sve ncut vrijednosti
+        self.fiedler_vectors = []
+        self.splits = []  # za sve splits
+        self.sorted_indexes = []
 
     #-----------------------učitavanje slike-----------------------------
     def load_image(self, image_path):
@@ -94,12 +100,9 @@ class SpectralClusteringSM:
             z = y - alpha_i * q_curr
             
             #korak 7: preskok
-            
-           
             if i < self.lanczos_k - 1:
+                
                  # korak 8: 𝛽𝑛 = ‖𝐳𝑛+1‖2
-
-
                 beta_i = np.sqrt(np.sum(z**2))
                 betas[i] = beta_i
                 
@@ -114,13 +117,17 @@ class SpectralClusteringSM:
     def compute_fiedler_vector(self, L):
         #b = np.random.rand(self.n)
         b = np.ones(L.shape[0]) # da maknemo randomness
-        Q, alphas, betas = self.lanczos(L, b)
-        # tridijagonalna matrica
-        T = np.diag(alphas) + np.diag(betas, 1) + np.diag(betas, -1)
+        if (self.lanczos_k != None):
+            Q, alphas, betas = self.lanczos(L, b)
+            # tridijagonalna matrica
+            T = np.diag(alphas) + np.diag(betas, 1) + np.diag(betas, -1)
         # TODO: zamijeniti built-in .eigh funkciju ??
-        eigvals, eigvecs = np.linalg.eigh(T)
-        
-        fiedler = Q @ eigvecs[:, 1]
+        if (len(self.X[0]) == 2):
+            self.eigvals, eigvecs = np.linalg.eigh(L)
+            fiedler = eigvecs[:, 1]
+        else:
+            self.eigvals, eigvecs = np.linalg.eigh(T)
+            fiedler = Q @ eigvecs[:, 1]
         fiedler = np.sign(fiedler[np.argmax(np.abs(fiedler))]) * fiedler # consistent sign ??
         return fiedler
 
@@ -136,33 +143,53 @@ class SpectralClusteringSM:
         assoc_B = np.sum(D[B])
         return (cut_AB / assoc_A) + (cut_AB / assoc_B)
 
-    
-    
     def recursive_two_way(self, indices, parent_cluster_id=0):
         # logika da se i prati max broj grupa: or self.current_cluster_id >= self.max_clusters - 1
-        if len(indices) < self.l :
+        if (self.l):
+           if len(indices) < self.l :
+                self.clusters[indices] = parent_cluster_id
+                return
+        elif len(indices) < 2:
             self.clusters[indices] = parent_cluster_id
             return
-
         # podgrafovi za trenutni cluser
         W_sub = self.W[indices][:, indices]
         L_sub = self.compute_laplacian(W_sub)
-        #print('L:' , np.round(L_sub,3))
-        fiedler = self.compute_fiedler_vector(L_sub)
+        self.fiedler = self.compute_fiedler_vector(L_sub)
+        self.fiedler_vectors.append(self.fiedler)  # spremanje fiedlerovog vektora za svaki podgraf
         
         #------------------------ Find optimal split ----------------------------
-        sorted_idx = np.argsort(fiedler)
+        self.sorted_idx = np.argsort(self.fiedler)
+        self.sorted_indexes.append(self.sorted_idx)  # spremanje indeksa sortiranja fiedlerovog vektora
         min_ncut = np.inf
         best_split = self.l
-        ncut_values = []
-        for i in range(self.l, len(fiedler) - self.l, self.l):
-            A = sorted_idx[:i]
-            B = sorted_idx[i:]
-            current_ncut = self.compute_ncut(W_sub, np.diag(np.sum(W_sub, axis=1)), A, B)
-            if current_ncut < min_ncut:
-                min_ncut = current_ncut
-                best_split = i
-                ncut_values.append(current_ncut) 
+        self.ncut_values = []
+                
+        # ako je 2d data, onda l mora biti 1
+        if (len(self.X[0]) == 2):
+            current_ncut_list = []
+            for i in range(1, len(self.fiedler)):
+                A = self.sorted_idx[:i]
+                B = self.sorted_idx[i:]
+                current_ncut = self.compute_ncut(W_sub, np.diag(np.sum(W_sub, axis=1)), A, B)
+                current_ncut_list.append({i: current_ncut})  # spremanje svih ncut vrijednosti
+                if current_ncut < min_ncut:
+                    min_ncut = current_ncut
+                    best_split = i
+                    
+                    self.ncut_values.append(current_ncut) 
+            self.all_ncut_values.append(current_ncut_list) 
+        else:   
+            for i in range(self.l, len(self.fiedler) - self.l, self.l):
+                A = self.sorted_idx[:i]
+                B = self.sorted_idx[i:]
+                current_ncut = self.compute_ncut(W_sub, np.diag(np.sum(W_sub, axis=1)), A, B)
+                self.all_ncut_values.append(current_ncut)  # spremanje svih ncut vrijednosti
+
+                if current_ncut < min_ncut:
+                    min_ncut = current_ncut
+                    best_split = i
+                    self.ncut_values.append(current_ncut) 
         "4. KORAK "
         #----------------------------- cut - stability ----------------------------
         # kako odrediti max cut:
@@ -173,8 +200,9 @@ class SpectralClusteringSM:
         # dijeliti ili ne
         # logika da se prati  i broj grupa: """ and self.current_cluster_id < self.max_clusters - 1 """
         if min_ncut < self.ncut_max:  
-            left = indices[sorted_idx[:best_split]]
-            right = indices[sorted_idx[best_split:]]
+            self.splits.append({best_split: min_ncut})
+            left = indices[self.sorted_idx[:best_split]]
+            right = indices[self.sorted_idx[best_split:]]
             
             "5. KORAK"
             #----------------------------- two-way recursion ----------------------------
@@ -232,26 +260,27 @@ class SpectralClusteringSM:
         plt.tight_layout()
         plt.show()
         
-        
     #2d dio
     def load_2d_data(self, data_2d):
         self.X = np.array(data_2d)
         self.intensities = np.zeros(len(data_2d))  
         self.n = self.X.shape[0]
         self.rows, self.cols = 1, self.n
-        self.clusters = np.zeros(self.n, dtype=int) # ???
+        self.clusters = np.zeros(self.n, dtype=int)
         return self
     
     def compute_similarity_matrix_2d_gauss(self):
         W = np.zeros((self.n, self.n))
+        distances = squareform(pdist(self.X))
+        A = np.exp(-distances**2 / (2 * self.sigma_X**2))
         for i in range(self.n):
             for j in range(i + 1, self.n):
                 dist_sq = np.linalg.norm(self.X[i] - self.X[j]) ** 2
                 w_ij = np.exp(-dist_sq / (2 * self.sigma_X ** 2))
                 W[i, j] = w_ij
                 W[j, i] = w_ij
+        np.fill_diagonal(W, 0)
         self.W = W
-        #print('W: ', np.round(W,3))
         return self
     
     def segment_2d(self,data):
