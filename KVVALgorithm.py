@@ -24,6 +24,8 @@ class SpectralClusteringKVV:
         self.splits = []  # za sve splits
         self.sorted_indexes = []
         self.adjustion = adjustion
+        self.L_subs = []
+        self.L_subs_indices = []
 
     #-----------------------učitavanje slike-----------------------------
     def load_image(self, image_path):
@@ -69,6 +71,7 @@ class SpectralClusteringKVV:
         # 
         D_inv_sqrt = np.diag([1.0 / np.sqrt(d) if d != 0 else 0 for d in np.diag(D)]) # D^1/2
         self.L = D_inv_sqrt @ (D - W) @ D_inv_sqrt
+
 
     # koristimo Lanczovou metodu da kretiramo manju matricu T umjesto L za 
     # izračunavanje eigen... built-in metodom .eigh
@@ -154,20 +157,25 @@ class SpectralClusteringKVV:
         # kvv mijenja L matricu
         W_sub = self.W[indices][:, indices]
         self.L_sub = self.L[indices][:, indices]
+        self.L_subs_indices.append([self.L_sub, indices])
         #kvv_mult
-        if (self.adjustion == "kvv_mult"):
+        if (self.adjustion == "kvv_mult" and len(indices) != self.n):
+            L_sub_copy = self.L_sub.copy()
             #skaliram sve elemente da suma retka bude 1
             row_sums = np.sum(self.L_sub, axis=1, keepdims=True)
             # izbjegni dijeljenje s 0
             row_sums[row_sums == 0] = 1
             self.L_sub = self.L_sub / row_sums
+            self.L_subs.append([L_sub_copy, row_sums, self.L_sub])  # spremanje L_sub matrice za svaki podgraf
             
-        elif (self.adjustion == "kvv_add"):
+        elif (self.adjustion == "kvv_add" and len(indices) != self.n):
             # dodajem elementima na dijagonali da suama retka bude 1
+            L_sub_copy = self.L_sub.copy()
             row_sums = np.sum(self.L_sub, axis=1)
             delta = 1.0 - row_sums
             # dodaj na dijagonalu
             self.L_sub[np.diag_indices_from(self.L_sub)] += delta
+            self.L_subs.append([L_sub_copy, delta, self.L_sub])  # spremanje L_sub matrice za svaki podgraf
         self.fiedler = self.compute_fiedler_vector(self.L_sub)
         self.fiedler_vectors.append(self.fiedler)  # spremanje fiedlerovog vektora za svaki podgraf
         
@@ -185,7 +193,7 @@ class SpectralClusteringKVV:
                 A = self.sorted_idx[:i]
                 B = self.sorted_idx[i:]
                 current_cheeger_cond = self.compute_cheeger(W_sub, np.diag(np.sum(W_sub, axis=1)), A, B)
-                current_cheeger_cond_list.append({i: current_cheeger_cond})  # spremanje svih cheeger_cond vrijednosti
+                current_cheeger_cond_list.append(current_cheeger_cond)  # spremanje svih cheeger_cond vrijednosti
                 if current_cheeger_cond < min_cheeger_cond:
                     min_cheeger_cond = current_cheeger_cond
                     best_split = i
@@ -213,6 +221,7 @@ class SpectralClusteringKVV:
         # dijeliti ili ne
         # logika da se prati  i broj grupa: """ and self.current_cluster_id < self.max_clusters - 1 """
         if min_cheeger_cond < self.cheeger_cond_max:  
+            print('min_cheeger_cond: ', min_cheeger_cond   )
             self.splits.append({best_split: min_cheeger_cond}) 
             left = indices[self.sorted_idx[:best_split]]
             right = indices[self.sorted_idx[best_split:]]
@@ -234,6 +243,7 @@ class SpectralClusteringKVV:
     def segment_image(self):
         self.compute_similarity_matrix()
         self.compute_laplacian()
+        print
         self.recursive_two_way(np.arange(self.n))
         return self.clusters.reshape((self.rows, self.cols))
     

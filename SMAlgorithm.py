@@ -23,6 +23,7 @@ class SpectralClusteringSM:
         self.fiedler_vectors = []
         self.splits = []  # za sve splits
         self.sorted_indexes = []
+        self.all_eigenvals = []
 
     #-----------------------učitavanje slike-----------------------------
     def load_image(self, image_path):
@@ -67,7 +68,8 @@ class SpectralClusteringSM:
         # PROBLEM: nekad naiđe na dijeljenje s 0
         # 
         D_inv_sqrt = np.diag([1.0 / np.sqrt(d) if d != 0 else 0 for d in np.diag(D)]) # D^1/2
-        return D_inv_sqrt @ (D - W) @ D_inv_sqrt
+        self.L = D_inv_sqrt @ (D - W) @ D_inv_sqrt
+        return self.L
 
     # koristimo Lanczovou metodu da kretiramo manju matricu T umjesto L za 
     # izračunavanje eigen... built-in metodom .eigh
@@ -125,10 +127,11 @@ class SpectralClusteringSM:
         if (len(self.X[0]) == 2):
             self.eigvals, eigvecs = np.linalg.eigh(L)
             fiedler = eigvecs[:, 1]
+
         else:
             self.eigvals, eigvecs = np.linalg.eigh(T)
             fiedler = Q @ eigvecs[:, 1]
-        fiedler = np.sign(fiedler[np.argmax(np.abs(fiedler))]) * fiedler # consistent sign ??
+        self.all_eigenvals.append(self.eigvals)
         return fiedler
 
     """ 3.KORAK """
@@ -172,7 +175,7 @@ class SpectralClusteringSM:
                 A = self.sorted_idx[:i]
                 B = self.sorted_idx[i:]
                 current_ncut = self.compute_ncut(W_sub, np.diag(np.sum(W_sub, axis=1)), A, B)
-                current_ncut_list.append({i: current_ncut})  # spremanje svih ncut vrijednosti
+                current_ncut_list.append(current_ncut)  # spremanje svih ncut vrijednosti
                 if current_ncut < min_ncut:
                     min_ncut = current_ncut
                     best_split = i

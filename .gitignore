@@ -20,3 +20,9 @@ eagle_50px.jpg
 /__pycache__
 __pycache__/
 *output*
+basic_example.ipynb
+KMeans.ipynb
+KMeansCustom.ipynb
+NJW.ipynb
+SM.ipynb
+start.ipynb
