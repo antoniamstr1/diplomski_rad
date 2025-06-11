@@ -86,7 +86,7 @@ class SpectralClusteringNJW:
         Z = self.compute_k_eigenvectors()
         #custom KMeanss
         customKmeans = KMeansCustom(self.max_clusters, Z)
-        self.clusters = customKmeans.pipeline()
+        self.clusters, _ = customKmeans.pipeline()
         return np.array(self.clusters).reshape((self.rows, self.cols))
         
         

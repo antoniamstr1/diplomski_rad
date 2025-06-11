@@ -293,3 +293,13 @@ class SpectralClusteringSM:
         return self.clusters.reshape((self.rows, self.cols))
 
     
+    
+    def segment_network(self, W, X=None):
+        self.W = W
+        self.n = W.shape[0]
+        self.X = np.zeros((self.n, 2))
+        self.rows = 1
+        self.cols = self.n
+        self.clusters = np.zeros(self.n, dtype=int)
+        self.recursive_two_way(np.arange(self.n))
+        return self.clusters

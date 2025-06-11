@@ -221,7 +221,6 @@ class SpectralClusteringKVV:
         # dijeliti ili ne
         # logika da se prati  i broj grupa: """ and self.current_cluster_id < self.max_clusters - 1 """
         if min_cheeger_cond < self.cheeger_cond_max:  
-            print('min_cheeger_cond: ', min_cheeger_cond   )
             self.splits.append({best_split: min_cheeger_cond}) 
             left = indices[self.sorted_idx[:best_split]]
             right = indices[self.sorted_idx[best_split:]]
@@ -243,7 +242,6 @@ class SpectralClusteringKVV:
     def segment_image(self):
         self.compute_similarity_matrix()
         self.compute_laplacian()
-        print
         self.recursive_two_way(np.arange(self.n))
         return self.clusters.reshape((self.rows, self.cols))
     
