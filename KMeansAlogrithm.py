@@ -78,17 +78,17 @@ class KMeansCustom:
         self.centroids = self.initialize_centroids()
         old_centroids = self.centroids.copy()
 
-        self.centroid_history = [old_centroids.copy()]   # store initial centroids
+        self.centroid_history = [old_centroids.copy()]  
         self.cluster_history = []
 
         self.counter = 50000
         while True and self.counter > 0:
             self.counter -= 1
             self.assign_clusters()
-            self.cluster_history.append(self.clusters.copy())  # store current clustering
+            self.cluster_history.append(self.clusters.copy()) 
 
             self.update_centroids()
-            self.centroid_history.append(self.centroids.copy())  # store updated centroids
+            self.centroid_history.append(self.centroids.copy()) 
 
             if np.allclose(old_centroids, self.centroids):
                 break

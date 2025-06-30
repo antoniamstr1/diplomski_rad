@@ -7,6 +7,8 @@ from sklearn.metrics.pairwise import rbf_kernel
 
 from KMeansAlogrithm import KMeansCustom
 from scipy.spatial.distance import pdist, squareform
+from mpl_toolkits.mplot3d import Axes3D  # Needed for 3D plotting
+
 
 
 class SpectralClusteringNJW:
@@ -163,4 +165,34 @@ class SpectralClusteringNJW:
         return np.array(self.clusters).reshape((self.rows, self.cols))
 
     
+    def compute_similarity_matrix_nd_gauss(self):
+        distances = squareform(pdist(self.X))
+        W = np.exp(-distances**2 / (2 * self.sigma_X**2))
+        np.fill_diagonal(W, 0)
+        self.W = W
+        return self
+
+
+    def segment_3d(self, data):
+        self.load_2d_data(data)
+        self.compute_similarity_matrix_nd_gauss()
+        Z = self.compute_k_eigenvectors()
+        customKmeans = KMeansCustom(self.max_clusters, Z)
+        self.clusters, _ = customKmeans.pipeline()
+        print()
+        return np.array(self.clusters).reshape((self.rows, self.cols))
+
+
+    def visualize_3d_clusters(self):
         
+        
+        fig = plt.figure(figsize=(5,4))
+        ax = fig.add_subplot(111, projection='3d')
+        scatter = ax.scatter(self.X[:, 0], self.X[:, 1], self.X[:, 2],
+                            c=self.clusters, cmap='viridis', s=50)
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        plt.legend(*scatter.legend_elements(), title="Skupine", loc='upper right')
+        plt.tight_layout()
+        plt.show()

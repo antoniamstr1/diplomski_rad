@@ -124,7 +124,7 @@ class SpectralClusteringSM:
             # tridijagonalna matrica
             T = np.diag(alphas) + np.diag(betas, 1) + np.diag(betas, -1)
         # TODO: zamijeniti built-in .eigh funkciju ??
-        if (len(self.X[0]) == 2):
+        if (len(self.X[0]) == 2 or len(self.X[0]) == 784):
             self.eigvals, eigvecs = np.linalg.eigh(L)
             fiedler = eigvecs[:, 1]
 
@@ -169,7 +169,7 @@ class SpectralClusteringSM:
         self.ncut_values = []
                 
         # ako je 2d data, onda l mora biti 1
-        if (len(self.X[0]) == 2):
+        if (len(self.X[0]) == 2 or len(self.X[0]) == 784):
             current_ncut_list = []
             for i in range(1, len(self.fiedler)):
                 A = self.sorted_idx[:i]
@@ -272,6 +272,13 @@ class SpectralClusteringSM:
         self.clusters = np.zeros(self.n, dtype=int)
         return self
     
+    def load_nd_data(self, data_nd):
+        self.X = np.array(data_nd)  
+        self.n = self.X.shape[0]  
+        self.rows, self.cols = 1, self.n  
+        self.clusters = np.zeros(self.n, dtype=int)
+        return self
+    
     def compute_similarity_matrix_2d_gauss(self):
         W = np.zeros((self.n, self.n))
         distances = squareform(pdist(self.X))
@@ -286,12 +293,29 @@ class SpectralClusteringSM:
         self.W = W
         return self
     
+    
+    def compute_similarity_matrix_nd_gauss(self):
+        distances_sq = squareform(pdist(self.X, metric='sqeuclidean'))
+        W = np.exp(-distances_sq / (2 * self.sigma_X ** 2))
+        np.fill_diagonal(W, 0)
+
+        self.W = W
+        return self
+
+    
     def segment_2d(self,data):
         self.load_2d_data(data)
         self.compute_similarity_matrix_2d_gauss()
         self.recursive_two_way(np.arange(self.n))
         return self.clusters.reshape((self.rows, self.cols))
 
+    def segment_nd(self,data):
+        self.load_nd_data(data)
+        self.compute_similarity_matrix_nd_gauss()
+        self.recursive_two_way(np.arange(self.n))
+        return self.clusters.reshape((self.rows, self.cols))
+
+    
     
     
     def segment_network(self, W, X=None):
