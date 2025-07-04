@@ -10,41 +10,35 @@ warnings.filterwarnings("ignore")
 class SpectralClusteringKVV:
     def __init__(self, sigma_X, adjustion, lanczos_k=None, l=None, cheeger_cond_max=None, sigma_I=None, r=None):
         
-        self.sigma_I = sigma_I #intsnsitiy scale
-        self.sigma_X = sigma_X #spatial sclae
-        self.r = r # spatial cutoff
+        self.sigma_I = sigma_I 
+        self.sigma_X = sigma_X
+        self.r = r 
         self.lanczos_k = lanczos_k
         self.l = l
-        self.cheeger_cond_max = cheeger_cond_max  # threshold za splitting
+        self.cheeger_cond_max = cheeger_cond_max  
         self.current_cluster_id = 0
-        #self.max_clusters = max_clusters
-        #vrijednosti za ispits
-        self.all_cheeger_cond_values = []  # za sve cheeger_cond vrijednosti
+        self.all_cheeger_cond_values = []  
         self.fiedler_vectors = []
-        self.splits = []  # za sve splits
+        self.splits = []  
         self.sorted_indexes = []
         self.adjustion = adjustion
         self.L_subs = []
         self.L_subs_indices = []
 
-    #-----------------------učitavanje slike-----------------------------
     def load_image(self, image_path):
         self.img = io.imread(image_path, as_gray=True).astype(np.float64)
-        # skaliranje brigthnessa na 0-255
         self.img *= 255  
         self.img = np.clip(self.img, 0, 255)
         self.rows, self.cols = self.img.shape
-        #------------------pretvaranje pixela u čvorove------------------
         self.X = np.array([(i, j) for i in range(self.rows) for j in range(self.cols)])
         self.intensities = self.img.flatten()
         self.n = self.X.shape[0]
-        self.clusters = np.zeros(self.n, dtype=int) # ???
+        self.clusters = np.zeros(self.n, dtype=int) 
         return self
     
     """ 1.KORAK """
-    #---------------------- iz rada SM formula za simm.----------------------
     def compute_similarity_matrix(self):
-        W = np.zeros((self.n, self.n))  # simmilarity matrix prema brightness
+        W = np.zeros((self.n, self.n)) 
         r_sq = self.r ** 2
         for i in range(self.n):
                 for j in range(i + 1, self.n):
@@ -61,21 +55,13 @@ class SpectralClusteringKVV:
         return self
 
     """ 2.KORAK """
-    #---------------------- eigenvrijednosti - eigenvektori ----------------
     def compute_laplacian(self, W=None):
-        #L = D - W -> nenormalizirana matrica
         if W is None:
             W = self.W
         D = np.diag(np.sum(W, axis=1))
-        # PROBLEM: nekad naiđe na dijeljenje s 0
-        # 
-        D_inv_sqrt = np.diag([1.0 / np.sqrt(d) if d != 0 else 0 for d in np.diag(D)]) # D^1/2
+        D_inv_sqrt = np.diag([1.0 / np.sqrt(d) if d != 0 else 0 for d in np.diag(D)]) 
         self.L = D_inv_sqrt @ (D - W) @ D_inv_sqrt
 
-
-    # koristimo Lanczovou metodu da kretiramo manju matricu T umjesto L za 
-    # izračunavanje eigen... built-in metodom .eigh
-    # https://arxiv.org/pdf/2410.11090
     def lanczos(self, A, b):
         Q = np.zeros((len(b), self.lanczos_k))
         alphas = np.zeros(self.lanczos_k)
@@ -90,7 +76,6 @@ class SpectralClusteringKVV:
             Q[:, i] = q_curr
             
             # korak 4: 𝐲𝑛+1 = 𝐀𝐪𝑛 − 𝛽𝑛−1𝐪𝑛−1
-            # TODO: callable???
             if callable(A):
                 y = A*q_curr - beta_prev * q_prev
             else:
@@ -119,33 +104,27 @@ class SpectralClusteringKVV:
     
 
     def compute_fiedler_vector(self, L):
-        #b = np.random.rand(self.n)
-        b = np.ones(L.shape[0]) # da maknemo randomness
+        b = np.ones(L.shape[0]) 
         if (self.lanczos_k != None):
             Q, alphas, betas = self.lanczos(L, b)
-            # tridijagonalna matrica
             T = np.diag(alphas) + np.diag(betas, 1) + np.diag(betas, -1)
-        # TODO: zamijeniti built-in .eigh funkciju ??
         if (len(self.X[0]) == 2):
             self.eigvals, eigvecs = np.linalg.eigh(L)
             fiedler = eigvecs[:, 1]
         else:
             self.eigvals, eigvecs = np.linalg.eigh(T)
             fiedler = Q @ eigvecs[:, 1]
-        fiedler = np.sign(fiedler[np.argmax(np.abs(fiedler))]) * fiedler # consistent sign ??
+        fiedler = np.sign(fiedler[np.argmax(np.abs(fiedler))]) * fiedler 
         return fiedler
 
     """ 3.KORAK """
-    #----------------------------- Cheegerova provodljivost ----------------------------------
     def compute_cheeger(self, W, D, A, B):
         cut_AB = np.sum(W[A, :][:, B])
-        # vol je assoc
         assoc_A = np.sum(D[A])
         assoc_B = np.sum(D[B])
         return cut_AB / max(min(assoc_A, assoc_B), 1e-12)
 
     def recursive_two_way(self, indices, parent_cluster_id=0):
-        # logika da se i prati max broj grupa: or self.current_cluster_id >= self.max_clusters - 1
         if (self.l):
            if len(indices) < self.l :
                 self.clusters[indices] = parent_cluster_id
@@ -154,46 +133,38 @@ class SpectralClusteringKVV:
             self.clusters[indices] = parent_cluster_id
             return
 
-        # kvv mijenja L matricu
         W_sub = self.W[indices][:, indices]
         self.L_sub = self.L[indices][:, indices]
         self.L_subs_indices.append([self.L_sub, indices])
-        #kvv_mult
         if (self.adjustion == "kvv_mult" and len(indices) != self.n):
             L_sub_copy = self.L_sub.copy()
-            #skaliram sve elemente da suma retka bude 1
             row_sums = np.sum(self.L_sub, axis=1, keepdims=True)
-            # izbjegni dijeljenje s 0
             row_sums[row_sums == 0] = 1
             self.L_sub = self.L_sub / row_sums
-            self.L_subs.append([L_sub_copy, row_sums, self.L_sub])  # spremanje L_sub matrice za svaki podgraf
+            self.L_subs.append([L_sub_copy, row_sums, self.L_sub]) 
             
         elif (self.adjustion == "kvv_add" and len(indices) != self.n):
-            # dodajem elementima na dijagonali da suama retka bude 1
             L_sub_copy = self.L_sub.copy()
             row_sums = np.sum(self.L_sub, axis=1)
             delta = 1.0 - row_sums
-            # dodaj na dijagonalu
             self.L_sub[np.diag_indices_from(self.L_sub)] += delta
-            self.L_subs.append([L_sub_copy, delta, self.L_sub])  # spremanje L_sub matrice za svaki podgraf
+            self.L_subs.append([L_sub_copy, delta, self.L_sub])  
         self.fiedler = self.compute_fiedler_vector(self.L_sub)
-        self.fiedler_vectors.append(self.fiedler)  # spremanje fiedlerovog vektora za svaki podgraf
+        self.fiedler_vectors.append(self.fiedler) 
         
-        #------------------------ Find optimal split ----------------------------
         self.sorted_idx = np.argsort(self.fiedler)
-        self.sorted_indexes.append(self.sorted_idx)  # spremanje indeksa sortiranja fiedlerovog vektora
+        self.sorted_indexes.append(self.sorted_idx) 
         min_cheeger_cond = np.inf
         best_split = self.l
         self.cheeger_cond_values = []
                 
-        # ako je 2d data, onda l mora biti 1
         if (len(self.X[0]) == 2):
             current_cheeger_cond_list = []
             for i in range(1, len(self.fiedler)):
                 A = self.sorted_idx[:i]
                 B = self.sorted_idx[i:]
                 current_cheeger_cond = self.compute_cheeger(W_sub, np.diag(np.sum(W_sub, axis=1)), A, B)
-                current_cheeger_cond_list.append(current_cheeger_cond)  # spremanje svih cheeger_cond vrijednosti
+                current_cheeger_cond_list.append(current_cheeger_cond) 
                 if current_cheeger_cond < min_cheeger_cond:
                     min_cheeger_cond = current_cheeger_cond
                     best_split = i
@@ -205,28 +176,20 @@ class SpectralClusteringKVV:
                 A = self.sorted_idx[:i]
                 B = self.sorted_idx[i:]
                 current_cheeger_cond = self.compute_cheeger(W_sub, np.diag(np.sum(W_sub, axis=1)), A, B)
-                self.all_cheeger_cond_values.append(current_cheeger_cond)  # spremanje svih cheeger_cond vrijednosti
+                self.all_cheeger_cond_values.append(current_cheeger_cond) 
 
                 if current_cheeger_cond < min_cheeger_cond:
                     min_cheeger_cond = current_cheeger_cond
                     best_split = i
                     self.cheeger_cond_values.append(current_cheeger_cond) 
+                    
         "4. KORAK "
-        #----------------------------- cut - stability ----------------------------
-        # kako odrediti max cut:
-            # empririjski [0.1,0.5] ->provjeriti
-            # malo iznad prosjeka
-        #self.max_cheeger_cond = np.mean(cheeger_cond_values) # previše grupa
-        
-        # dijeliti ili ne
-        # logika da se prati  i broj grupa: """ and self.current_cluster_id < self.max_clusters - 1 """
         if min_cheeger_cond < self.cheeger_cond_max:  
             self.splits.append({best_split: min_cheeger_cond}) 
             left = indices[self.sorted_idx[:best_split]]
             right = indices[self.sorted_idx[best_split:]]
             
             "5. KORAK"
-            #----------------------------- two-way recursion ----------------------------
             self.current_cluster_id += 1
             new_cluster_id = self.current_cluster_id
             
@@ -238,14 +201,12 @@ class SpectralClusteringKVV:
             
        
 
-    # pipline koji poziva sve bitne funkcije
     def segment_image(self):
         self.compute_similarity_matrix()
         self.compute_laplacian()
         self.recursive_two_way(np.arange(self.n))
         return self.clusters.reshape((self.rows, self.cols))
     
-    #---------------------------------- average color ---------------------------------------
     def average_color(self):
         self.segmented_img = self.clusters.reshape((self.rows, self.cols))
         num_clusters = len(set(self.clusters))
@@ -282,7 +243,6 @@ class SpectralClusteringKVV:
         plt.tight_layout()
         plt.show()
         
-    #2d dio
     def load_2d_data(self, data_2d):
         self.X = np.array(data_2d)
         self.intensities = np.zeros(len(data_2d))  

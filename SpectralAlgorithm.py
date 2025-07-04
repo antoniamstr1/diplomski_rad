@@ -8,17 +8,17 @@ from scipy.spatial.distance import pdist, squareform
 
 class SpectralClustering:
     def __init__(self, X=None, k=5, sigma=None):
-        self.X = X                      # Skup podataka (n x d)
-        self.k = k                      # Broj susjeda u k-NN
-        self.sigma = sigma              # Parametar za gaussov kernel
-        self.A = None                   # Matrica sličnosti
-        self.D = None                   # Matrica stupnjeva
-        self.L = None                   # Laplaceova matrica
-        self.L_norm = None              # Normalizirana Laplaceova matrica
-        self.eigvals = None             # Vlastite vrijednosti
-        self.eigvecs = None             # Vlastiti vektori
-        self.fiedler_vector = None      # Drugi vlastiti vektor
-        self.clusters = None            # Rezultat klasteriranja (0/1)
+        self.X = X                     
+        self.k = k                      
+        self.sigma = sigma        
+        self.A = None               
+        self.D = None             
+        self.L = None        
+        self.L_norm = None      
+        self.eigvals = None           
+        self.eigvecs = None             
+        self.fiedler_vector = None    
+        self.clusters = None           
         
     def compute_adjacency_matrix(self):
         n = len(self.X)

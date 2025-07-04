@@ -14,22 +14,12 @@ class KMeansCustom:
     def euclidean_distance(self, a, b):
         return np.sqrt(np.sum((a - b) ** 2))
 
-    # PROBLEM s NaN vrijdnostima: nekada neke grupe ne bi obuhvatile niti jednu točku -> rez je prazna slika
-    # implementiran kmeans++
-    # http://ilpubs.stanford.edu:8090/778/1/2006-13.pdf
     def initialize_centroids(self):
-        # uzimam prvu random točku kao početni centroid
-        # 1a.
+
         centroids = [self.data[np.random.randint(0, len(self.data))]]
-        # za sljedećih n središta
         for _ in range(1, self.n_clusters):
-            # za svaku točku izračunava udaljenost do najbližeg centroida
             distances = np.array([min([self.euclidean_distance(d, c)**2 for c in centroids]) for d in self.data])
-            # izračunavam vjerojatnosti da sljedeća točka bude odabrana D(x^2)
-            # normaliziramo distribuciju u probabilty distribution
-            # 1b.
             probs = distances / distances.sum()
-            # pretvara u kumulativnu distribuciju tako da je u [0,1] i možemo ju uzorkovati 
             cumulative_probs = np.cumsum(probs)
             r = np.random.rand()
             for j, p in enumerate(cumulative_probs):
@@ -47,7 +37,6 @@ class KMeansCustom:
     def assign_clusters(self):
         clusters = []
         for d in self.data:
-            # dodajemo index središta do kojeg teba najmanje
             closest_centroid = np.argmin([self.euclidean_distance(d, c) for c in self.centroids])
             clusters.append(closest_centroid)
         self.clusters = np.array(clusters)
@@ -58,7 +47,6 @@ class KMeansCustom:
         for label in range(self.n_clusters):
             group = self.data[self.clusters == label]
             if len(group) == 0:
-                # ako nema grupa točaka, dodajemo novi centroid
                 new_centroid = self.data[np.random.randint(0, len(self.data))]
             else:
                 new_centroid = np.mean(group, axis=0)
@@ -71,11 +59,7 @@ class KMeansCustom:
             maximum = np.max(self.data, axis=0)
             return maximum,minimum 
         
-    """ pipeline koji vraća clustere """
     def pipeline(self):
-        # početni random centroidi
-        #min_vals, max_vals = self.max_min_values()
-        #self.centroids = np.random.uniform(low=min_vals, high=max_vals, size=(self.n_clusters, len(self.data[0])))
         self.centroids = self.initialize_centroids()
         old_centroids = self.centroids.copy()
 
@@ -102,18 +86,15 @@ class KMeansCustom:
     """ SEGMENTACIJA SLIKA """
     def load_image(self, image_path):
         self.data = io.imread(image_path, as_gray=True).astype(np.float64)
-        # skaliranje brigthnessa na 0-255
         self.data *= 255  
         self.data = np.clip(self.data, 0, 255)
         self.rows, self.cols = self.data.shape
-        #------------------pretvaranje pixela u čvorove-----------------
         self.X = np.array([
         (i, j, self.data[i, j]) for i in range(self.rows) for j in range(self.cols)
         ])
         self.n = self.X.shape[0]
         self.clusters = np.zeros(self.n, dtype=int) # ???
         return self
-    #---------------------------------- average color ---------------------------------------
     def average_color(self):
         self.segmented_img = np.array(self.clusters).reshape((self.rows, self.cols))
 
@@ -150,7 +131,6 @@ class KMeansCustom:
         plt.tight_layout()
         plt.show()
         
-    """ pipline koji dolazi iz slike """
     def pipeline_img(self, image_path):
         self.load_image(image_path)
         kmeans = KMeansCustom(self.n_clusters, self.X)

@@ -9,30 +9,25 @@ from scipy.spatial.distance import pdist, squareform
 
 class SpectralClusteringNJW:
     def __init__(self, sigma_X, max_clusters, sigma_I=None, r=None):
-        self.sigma_I = sigma_I  # intsnsitiy scale
-        self.sigma_X = sigma_X  # spatial sclae
-        self.r = r  # spatial cutoff
+        self.sigma_I = sigma_I 
+        self.sigma_X = sigma_X 
+        self.r = r  
         self.max_clusters = max_clusters
 
-    # -----------------------učitavanje slike-----------------------------
     def load_image(self, image_path):
         self.img = io.imread(image_path, as_gray=True).astype(np.float64)
-        # skaliranje brigthnessa na 0-255
         self.img *= 255
         self.img = np.clip(self.img, 0, 255)
         self.rows, self.cols = self.img.shape
-        # ------------------pretvaranje pixela u čvorove------------------
         self.X = np.array([(i, j) for i in range(self.rows) for j in range(self.cols)])
         self.intensities = self.img.flatten()
         self.n = self.X.shape[0]
-        self.clusters = np.zeros(self.n, dtype=int)  # ???
+        self.clusters = np.zeros(self.n, dtype=int) 
         return self
 
     """ 1.KORAK """
-
-    # ---------------------- iz rada SM formula za simm.----------------------
     def compute_similarity_matrix(self):
-        W = np.zeros((self.n, self.n))  # simmilarity matrix prema brightness
+        W = np.zeros((self.n, self.n)) 
         r_sq = self.r**2
         for i in range(self.n):
             for j in range(i + 1, self.n):
@@ -44,7 +39,7 @@ class SpectralClusteringNJW:
                             ** 2
                         )
                     else:
-                        intensity_diff_sq = 0  # ignore intensity
+                        intensity_diff_sq = 0 
                     w_ij = np.exp(-intensity_diff_sq / (self.sigma_I**2)) * np.exp(
                         -(spatial_dist_sq**2) / (self.sigma_X**2)
                     )
@@ -55,43 +50,32 @@ class SpectralClusteringNJW:
         return self
 
     """ 2.KORAK """
-
-    # ---------------------- eigenvrijednosti - eigenvektori ----------------
     def compute_laplacian(self, W=None):
-        # L = D - W -> nenormalizirana matrica
         if W is None:
             W = self.W
         D = np.diag(np.sum(W, axis=1))
-        D_inv_sqrt = np.diag(
-            [1.0 / np.sqrt(d) if d != 0 else 0 for d in np.diag(D)]
-        )  # D^1/2
+        D_inv_sqrt = np.diag([1.0 / np.sqrt(d) if d != 0 else 0 for d in np.diag(D)]) 
         self.Laplacian = D_inv_sqrt @ (D - W) @ D_inv_sqrt
         return D_inv_sqrt @ (D - W) @ D_inv_sqrt
 
     def compute_k_eigenvectors(self):
         L = self.compute_laplacian(self.W)
-        # TODO: zamijeniti built-in .eigh funkciju ??
+
         self.eigvals, self.eigvecs = np.linalg.eigh(L)
         """ 3/4.KORAK """
-        # -------------------------- min k eigenvektora ---------------------------------
         self.X = self.eigvecs[:, : self.max_clusters]
-
-        # norm
         self.Y = self.X / np.linalg.norm(self.X, axis=1, keepdims=True)
 
         return self.Y
 
-    # pipline koji poziva sve bitne funkcije
     def segment_image(self):
         self.compute_similarity_matrix()
         """ 5.KORAK """
         Z = self.compute_k_eigenvectors()
-        # custom KMeanss
         customKmeans = KMeansCustom(self.max_clusters, Z)
         self.clusters, _ = customKmeans.pipeline()
         return np.array(self.clusters).reshape((self.rows, self.cols))
 
-    # ---------------------------------- average color ---------------------------------------
     def average_color(self):
         self.segmented_img = np.array(self.clusters).reshape((self.rows, self.cols))
 
@@ -129,7 +113,6 @@ class SpectralClusteringNJW:
         plt.tight_layout()
         plt.show()
 
-    # 2d data
     def load_2d_data(self, data_2d):
         self.X = np.array(data_2d)
         self.n = self.X.shape[0]
@@ -154,7 +137,6 @@ class SpectralClusteringNJW:
         self.load_2d_data(data)
         self.compute_similarity_matrix_2d_gauss()
         Z = self.compute_k_eigenvectors()
-        # custom KMeanss
         customKmeans = KMeansCustom(self.max_clusters, Z)
         self.clusters, _ = customKmeans.pipeline()
         return np.array(self.clusters).reshape((self.rows, self.cols))
