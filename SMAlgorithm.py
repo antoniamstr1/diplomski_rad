@@ -294,14 +294,19 @@ class SpectralClusteringSM:
         return self
     
     
+    def compute_similarity_matrix_nd_cosine(self):
+        distances = squareform(pdist(self.X, metric='cosine'))
+        W = 1 - distances
+        np.fill_diagonal(W, 0)
+        self.W = W
+        return self
+    
     def compute_similarity_matrix_nd_gauss(self):
         distances_sq = squareform(pdist(self.X, metric='sqeuclidean'))
         W = np.exp(-distances_sq / (2 * self.sigma_X ** 2))
         np.fill_diagonal(W, 0)
-
         self.W = W
         return self
-
     
     def segment_2d(self,data):
         self.load_2d_data(data)
@@ -309,21 +314,12 @@ class SpectralClusteringSM:
         self.recursive_two_way(np.arange(self.n))
         return self.clusters.reshape((self.rows, self.cols))
 
-    def segment_nd(self,data):
+    def segment_nd(self,data, similarity_type):
         self.load_nd_data(data)
-        self.compute_similarity_matrix_nd_gauss()
+        if similarity_type == 'gauss':
+            self.compute_similarity_matrix_nd_gauss()
+        elif similarity_type == 'cosine':
+            self.compute_similarity_matrix_nd_cosine()
         self.recursive_two_way(np.arange(self.n))
         return self.clusters.reshape((self.rows, self.cols))
-
     
-    
-    
-    def segment_network(self, W, X=None):
-        self.W = W
-        self.n = W.shape[0]
-        self.X = np.zeros((self.n, 2))
-        self.rows = 1
-        self.cols = self.n
-        self.clusters = np.zeros(self.n, dtype=int)
-        self.recursive_two_way(np.arange(self.n))
-        return self.clusters

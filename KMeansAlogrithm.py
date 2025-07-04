@@ -9,7 +9,8 @@ class KMeansCustom:
     def __init__(self, n_clusters, data=None):
         self.n_clusters = n_clusters
         self.data = np.array(data) if data is not None else np.array([])
-
+        self.clusters = None
+        self.centroids = None
     def euclidean_distance(self, a, b):
         return np.sqrt(np.sum((a - b) ** 2))
 
@@ -166,3 +167,9 @@ class KMeansCustom:
         self.segmented_img = np.array(self.clusters).reshape((self.rows, self.cols))
         return self.segmented_img
         
+    def sse(self):
+        sse = 0.0
+        for i in range(len(self.data)):
+            center = self.centroids[self.clusters[i]]
+            sse += np.sum((self.data[i] - center) ** 2)
+        return sse
