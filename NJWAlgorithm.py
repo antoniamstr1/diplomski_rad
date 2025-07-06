@@ -13,6 +13,7 @@ class SpectralClusteringNJW:
         self.sigma_X = sigma_X 
         self.r = r  
         self.max_clusters = max_clusters
+        self.all_eigenvecs = []
 
     def load_image(self, image_path):
         self.img = io.imread(image_path, as_gray=True).astype(np.float64)
@@ -56,14 +57,19 @@ class SpectralClusteringNJW:
         D = np.diag(np.sum(W, axis=1))
         D_inv_sqrt = np.diag([1.0 / np.sqrt(d) if d != 0 else 0 for d in np.diag(D)]) 
         self.Laplacian = D_inv_sqrt @ (D - W) @ D_inv_sqrt
-        return D_inv_sqrt @ (D - W) @ D_inv_sqrt
+        #return D_inv_sqrt @ (D-w)) @ D_inv_sqrt
+        return D_inv_sqrt @ W @ D_inv_sqrt
 
     def compute_k_eigenvectors(self):
         L = self.compute_laplacian(self.W)
 
         self.eigvals, self.eigvecs = np.linalg.eigh(L)
+        self.all_eigenvecs.append(self.eigvecs)
         """ 3/4.KORAK """
-        self.X = self.eigvecs[:, : self.max_clusters]
+        #self.X = self.eigvecs[:, : self.max_clusters]
+        idx = np.argsort(self.eigvals)[::-1]  # descending
+        eigvecs = self.eigvecs[:, idx]
+        self.X = eigvecs[:, :self.max_clusters]
         self.Y = self.X / np.linalg.norm(self.X, axis=1, keepdims=True)
 
         return self.Y
