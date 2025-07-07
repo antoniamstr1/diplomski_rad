@@ -114,7 +114,6 @@ class SpectralClusteringKVV:
         else:
             self.eigvals, eigvecs = np.linalg.eigh(T)
             fiedler = Q @ eigvecs[:, 1]
-        fiedler = np.sign(fiedler[np.argmax(np.abs(fiedler))]) * fiedler 
         return fiedler
 
     """ 3.KORAK """

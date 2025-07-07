@@ -74,6 +74,13 @@ class SpectralClustering:
         np.fill_diagonal(A, 0)
         self.A = A
         return A
+    
+    def compute_similarity_matrix_cosine(self):
+        distances = squareform(pdist(self.X, metric='cosine'))
+        A = 1 - distances
+        np.fill_diagonal(A, 0)
+        self.A = A
+        return self
 
     def compute_degree_matrix(self, A=None):
         """ Izračun matrice stupnjeva """
@@ -117,11 +124,14 @@ class SpectralClustering:
         self.clusters = np.where(self.fiedler_vector >= 0, 1, 0)
         return self.fiedler_vector, self.clusters
 
-    def pipeline(self, normalized=True, sigma=None):
+    def pipeline(self, normalized=True, sigma=None, cosine=False):
         if sigma is not None:
             self.sigma = sigma
         """ Pokreni cijeli postupak spektralnog klasteriranja """
-        self.compute_similarity_matrix()
+        if cosine == True:
+            self.compute_similarity_matrix_cosine()
+        else:
+            self.compute_similarity_matrix()
         self.compute_degree_matrix()
         self.compute_laplacian()
         if normalized:
