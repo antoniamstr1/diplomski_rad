@@ -1,67 +1,112 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from skimage import io
 from scipy.spatial.distance import pdist, squareform
 import matplotlib.colors as mcolors
 
-import warnings
-warnings.filterwarnings("ignore")
-
 class SpectralClusteringSM:
-    def __init__(self, sigma_X, lanczos_k=None, l=None, ncut_max=None, sigma_I=None, r=None):
+    def __init__(self, sigma_X=None, lanczos_k=None, l=None, ncut_max=None, sigma_I=None, r=None):
         
-        self.sigma_I = sigma_I 
-        self.sigma_X = sigma_X 
-        self.r = r
+        self.sigma_X = sigma_X
         self.lanczos_k = lanczos_k
         self.l = l
-        self.ncut_max = ncut_max  
-        self.current_cluster_id = 0
-        self.all_ncut_values = []  
-        self.fiedler_vectors = []
-        self.splits = [] 
-        self.sorted_indexes = []
-        self.all_eigenvals = []
+        self.ncut_max = ncut_max
+        self.sigma_I = sigma_I
+        self.r = r
 
-    def load_image(self, image_path):
-        self.img = io.imread(image_path, as_gray=True).astype(np.float64)
-        self.img *= 255  
-        self.img = np.clip(self.img, 0, 255)
-        self.rows, self.cols = self.img.shape
-        self.X = np.array([(i, j) for i in range(self.rows) for j in range(self.cols)])
-        self.intensities = self.img.flatten()
-        self.n = self.X.shape[0]
-        self.clusters = np.zeros(self.n, dtype=int) 
+        self.X = None
+        self.img = None
+        self.intensities = None
+        self.rows = None
+        self.cols = None
+        self.n = None
+
+        self.clusters = None
+        self.current_cluster_id = 0
+
+        self.A = None
+        self.L = None
+
+        self.eigvals = None
+        self.fiedler = None
+        self.all_eigenvals = []
+        self.fiedler_vectors = []
+
+        self.splits = []
+        self.sorted_idx = None
+        self.sorted_indexes = []
+
+        self.ncut_values = []
+        self.all_ncut_values = []
+
+        self.segmented_img = None
+        
+    #-------------------------------------------------- D A T A  L O A D I N G --------------------------------------------------#
+    def load_data(self, data, mode):
+        if mode == 'image':
+            self.img = io.imread(data, as_gray=True).astype(np.float64)
+            self.img *= 255
+            self.img = np.clip(self.img, 0, 255)
+            self.rows, self.cols = self.img.shape
+            self.X = np.array([(i, j) for i in range(self.rows) for j in range(self.cols)])
+            self.intensities = self.img.flatten()
+            self.n = self.X.shape[0]
+        elif mode == 'points':
+            self.X = np.array(data)
+            self.n = self.X.shape[0]
+            self.rows = 1
+            self.cols = self.n
+        else:
+            raise ValueError(f"Unknown mode '{mode}'. Supported modes: 'image', 'None'")
+
+        self.clusters = np.zeros(self.n, dtype=int)
         return self
     
-    """ 1.KORAK """
-    def compute_similarity_matrix(self):
-        W = np.zeros((self.n, self.n))  
-        r_sq = self.r ** 2
-        for i in range(self.n):
+    #-------------------------------------------------- S I M I L A R I T Y  M A T R I X --------------------------------------------------#
+    def compute_similarity_matrix(self, mode):
+        A = np.zeros((self.n, self.n))
+
+        if mode == 'image':
+            r_sq = self.r ** 2
+            for i in range(self.n):
                 for j in range(i + 1, self.n):
                     spatial_dist_sq = np.linalg.norm(self.X[i] - self.X[j])
                     if spatial_dist_sq < r_sq:
                         intensity_diff_sq = np.linalg.norm(self.intensities[i] - self.intensities[j]) ** 2
                         w_ij = np.exp(-intensity_diff_sq / (self.sigma_I ** 2)) * \
                             np.exp(-spatial_dist_sq**2 / (self.sigma_X ** 2))
-                        W[i, j] = w_ij
-                        W[j, i] = w_ij
+                        A[i, j] = w_ij
+                        A[j, i] = w_ij
 
-            
-        self.W = W
+        elif mode == 'gauss':
+            distances = squareform(pdist(self.X))
+            for i in range(self.n):
+                for j in range(i + 1, self.n):
+                    dist_sq = distances[i, j] ** 2
+                    w_ij = np.exp(-dist_sq / (2 * self.sigma_X ** 2))
+                    A[i, j] = w_ij
+                    A[j, i] = w_ij
+
+        elif mode == 'cosine':
+            distances = squareform(pdist(self.X, metric='cosine'))
+            A = 1 - distances
+
+        else:
+            raise ValueError(f"Unknown mode '{mode}'. Supported modes: 'rgb+xy', '2d-gauss', 'nd-cosine'.")
+
+        np.fill_diagonal(A, 0)
+        self.A = A
         return self
-
-    """ 2.KORAK """
-    def compute_laplacian(self, W=None):
-        if W is None:
-            W = self.W
-        D = np.diag(np.sum(W, axis=1))
+    
+    #------------------------------N O R M A L I Z E D    L A P L A C I A N --------------------------------------------------#
+    def compute_laplacian(self, A=None):
+        if A is None:
+            A = self.A
+        D = np.diag(np.sum(A, axis=1))
         D_inv_sqrt = np.diag([1.0 / np.sqrt(d) if d != 0 else 0 for d in np.diag(D)]) 
-        self.L = D_inv_sqrt @ (D - W) @ D_inv_sqrt
+        self.L = D_inv_sqrt @ (D - A) @ D_inv_sqrt
         return self.L
 
-
+    #------------------------------ L A N C Z O S   A L G O R I T H M --------------------------------------------------#
     def lanczos(self, A, b):
         Q = np.zeros((len(b), self.lanczos_k))
         alphas = np.zeros(self.lanczos_k)
@@ -101,30 +146,31 @@ class SpectralClusteringSM:
                 beta_prev = beta_i
         
         return Q, alphas, betas
-    
 
+    #------------------------------ F I E D L E R ' S   V E C T O R --------------------------------------------------#
     def compute_fiedler_vector(self, L):
-        b = np.ones(L.shape[0]) 
         if (self.lanczos_k != None):
+            b = np.ones(L.shape[0]) 
             Q, alphas, betas = self.lanczos(L, b)
             T = np.diag(alphas) + np.diag(betas, 1) + np.diag(betas, -1)
-        if (len(self.X[0]) == 2 or len(self.X[0]) == 784):
-            self.eigvals, eigvecs = np.linalg.eigh(L)
-            fiedler = eigvecs[:, 1]
-
-        else:
             self.eigvals, eigvecs = np.linalg.eigh(T)
             fiedler = Q @ eigvecs[:, 1]
+        
+        else:
+            self.eigvals, eigvecs = np.linalg.eigh(L)
+            fiedler = eigvecs[:, 1]
+            
         self.all_eigenvals.append(self.eigvals)
         return fiedler
 
-    """ 3.KORAK """
-    def compute_ncut(self, W, D, A, B):
-        cut_AB = np.sum(W[A, :][:, B])
+    #------------------------------ N - C U T   V A L U E --------------------------------------------------#
+    def compute_ncut(self, A_m, D, A, B):
+        cut_AB = np.sum(A_m[A, :][:, B])
         assoc_A = np.sum(D[A])
         assoc_B = np.sum(D[B])
         return (cut_AB / assoc_A) + (cut_AB / assoc_B)
-
+    
+    #-------------------------------------------------------------------------------#
     def recursive_two_way(self, indices, parent_cluster_id=0):
         if (self.l):
            if len(indices) < self.l :
@@ -133,24 +179,23 @@ class SpectralClusteringSM:
         elif len(indices) < 2:
             self.clusters[indices] = parent_cluster_id
             return
-        W_sub = self.W[indices][:, indices]
-        L_sub = self.compute_laplacian(W_sub)
+        A_sub = self.A[indices][:, indices]
+        L_sub = self.compute_laplacian(A_sub)
         self.fiedler = self.compute_fiedler_vector(L_sub)
         self.fiedler_vectors.append(self.fiedler)  
         
-        #------------------------ optimalni rez ----------------------------
         self.sorted_idx = np.argsort(self.fiedler)
         self.sorted_indexes.append(self.sorted_idx)  
         min_ncut = np.inf
         best_split = self.l
         self.ncut_values = []
                 
-        if (len(self.X[0]) == 2 or len(self.X[0]) == 784):
+        if self.l is None:
             current_ncut_list = []
             for i in range(1, len(self.fiedler)):
                 A = self.sorted_idx[:i]
                 B = self.sorted_idx[i:]
-                current_ncut = self.compute_ncut(W_sub, np.diag(np.sum(W_sub, axis=1)), A, B)
+                current_ncut = self.compute_ncut(A_sub, np.diag(np.sum(A_sub, axis=1)), A, B)
                 current_ncut_list.append(current_ncut)  
                 if current_ncut < min_ncut:
                     min_ncut = current_ncut
@@ -162,7 +207,7 @@ class SpectralClusteringSM:
             for i in range(self.l, len(self.fiedler) - self.l, self.l):
                 A = self.sorted_idx[:i]
                 B = self.sorted_idx[i:]
-                current_ncut = self.compute_ncut(W_sub, np.diag(np.sum(W_sub, axis=1)), A, B)
+                current_ncut = self.compute_ncut(A_sub, np.diag(np.sum(A_sub, axis=1)), A, B)
                 self.all_ncut_values.append(current_ncut)  
 
                 if current_ncut < min_ncut:
@@ -170,13 +215,11 @@ class SpectralClusteringSM:
                     best_split = i
                     self.ncut_values.append(current_ncut) 
                     
-        "4. KORAK "
         if min_ncut < self.ncut_max:  
             self.splits.append({best_split: min_ncut})
             left = indices[self.sorted_idx[:best_split]]
             right = indices[self.sorted_idx[best_split:]]
             
-            "5. KORAK"
             self.current_cluster_id += 1
             new_cluster_id = self.current_cluster_id
             
@@ -185,13 +228,16 @@ class SpectralClusteringSM:
             self.recursive_two_way(right, new_cluster_id)
         else:
             self.clusters[indices] = parent_cluster_id
-            
-       
-    def segment_image(self):
-        self.compute_similarity_matrix()
+     
+    #-------------------------------------------------- S E G M E T A T I O N --------------------------------------------------#
+    def segment(self, data, mode, similarity_type):
+        self.load_data(data, mode=mode)
+        self.compute_similarity_matrix(mode=similarity_type)
+        self.compute_laplacian()
         self.recursive_two_way(np.arange(self.n))
         return self.clusters.reshape((self.rows, self.cols))
-    
+
+    #-------------------------------------------------- A V E R A G E  C O L O R --------------------------------------------------#
     def average_color(self):
         self.segmented_img = self.clusters.reshape((self.rows, self.cols))
         num_clusters = len(set(self.clusters))
@@ -211,79 +257,3 @@ class SpectralClusteringSM:
         cmap = mcolors.ListedColormap(rgb_grouped)
     
         return cmap
-    
-
-    def visualize(self):
-        segmented_img = self.clusters.reshape((self.rows, self.cols))
-        cmap_custom = self.average_color()
-        fig, axs = plt.subplots(1, 2, figsize=(12, 6))
-        axs[0].imshow(self.img, cmap='gray')
-        axs[0].set_title('Original')
-        axs[0].axis('off')
-        
-        axs[1].imshow(segmented_img, cmap=cmap_custom)
-        axs[1].set_title('Spectralno Grupiranje: Ncut + Lanczos')
-        axs[1].axis('off')
-        
-        plt.tight_layout()
-        plt.show()
-        
-    def load_2d_data(self, data_2d):
-        self.X = np.array(data_2d)
-        self.intensities = np.zeros(len(data_2d))  
-        self.n = self.X.shape[0]
-        self.rows, self.cols = 1, self.n
-        self.clusters = np.zeros(self.n, dtype=int)
-        return self
-    
-    def load_nd_data(self, data_nd):
-        self.X = np.array(data_nd)  
-        self.n = self.X.shape[0]  
-        self.rows, self.cols = 1, self.n  
-        self.clusters = np.zeros(self.n, dtype=int)
-        return self
-    
-    def compute_similarity_matrix_2d_gauss(self):
-        W = np.zeros((self.n, self.n))
-        distances = squareform(pdist(self.X))
-        A = np.exp(-distances**2 / (2 * self.sigma_X**2))
-        for i in range(self.n):
-            for j in range(i + 1, self.n):
-                dist_sq = np.linalg.norm(self.X[i] - self.X[j]) ** 2
-                w_ij = np.exp(-dist_sq / (2 * self.sigma_X ** 2))
-                W[i, j] = w_ij
-                W[j, i] = w_ij
-        np.fill_diagonal(W, 0)
-        self.W = W
-        return self
-    
-    
-    def compute_similarity_matrix_nd_cosine(self):
-        distances = squareform(pdist(self.X, metric='cosine'))
-        W = 1 - distances
-        np.fill_diagonal(W, 0)
-        self.W = W
-        return self
-    
-    def compute_similarity_matrix_nd_gauss(self):
-        distances_sq = squareform(pdist(self.X, metric='sqeuclidean'))
-        W = np.exp(-distances_sq / (2 * self.sigma_X ** 2))
-        np.fill_diagonal(W, 0)
-        self.W = W
-        return self
-    
-    def segment_2d(self,data):
-        self.load_2d_data(data)
-        self.compute_similarity_matrix_2d_gauss()
-        self.recursive_two_way(np.arange(self.n))
-        return self.clusters.reshape((self.rows, self.cols))
-
-    def segment_nd(self,data, similarity_type):
-        self.load_nd_data(data)
-        if similarity_type == 'gauss':
-            self.compute_similarity_matrix_nd_gauss()
-        elif similarity_type == 'cosine':
-            self.compute_similarity_matrix_nd_cosine()
-        self.recursive_two_way(np.arange(self.n))
-        return self.clusters.reshape((self.rows, self.cols))
-    

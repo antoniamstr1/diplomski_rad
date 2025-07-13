@@ -20,6 +20,7 @@ class SpectralClustering:
         self.fiedler_vector = None    
         self.clusters = None           
         
+    #------------------------------ S I M I L A R I T Y   M A T R I X --------------------------------------------------#
     def compute_adjacency_matrix(self):
         n = len(self.X)
         A = np.ones((n, n)).astype(int)
@@ -82,16 +83,16 @@ class SpectralClustering:
         self.A = A
         return self
 
+    #------------------------------ D E G R E E    M A T R I X --------------------------------------------------#
     def compute_degree_matrix(self, A=None):
-        """ Izračun matrice stupnjeva """
         if A is None:
             A = self.A
         D = np.diag(np.sum(A, axis=1))
         self.D = D
         return D
 
+    #------------------------------ L A P L A C I A N   M A T R I X --------------------------------------------------#
     def compute_laplacian(self, A=None):
-        """ Izračun Laplaceove matrice L = D - A """
         if A is None:
             A = self.A
         if self.D is None:
@@ -101,18 +102,17 @@ class SpectralClustering:
         return L
 
     def compute_normalized_laplacian(self, A=None):
-        """ Izračun simetrično normalizirane Laplaceove matrice L_sym = D^(-1/2) L D^(-1/2) """
         if A is None:
             A = self.A
         if self.L is None:
             self.compute_laplacian(A)
-        D_inv_sqrt = np.diag(1.0 / np.sqrt(np.diag(self.D) + 1e-10))  # Stabilnost
+        D_inv_sqrt = np.diag(1.0 / np.sqrt(np.diag(self.D) + 1e-10))  
         L_norm = D_inv_sqrt @ self.L @ D_inv_sqrt
         self.L_norm = L_norm
         return L_norm
 
+    #------------------------------ F I E D L E R S   V E C T O R --------------------------------------------------#
     def compute_fiedler_vector(self, use_normalized=True):
-        """ Izračun Fiedlerovog vektora i podjela u 2 klastera """
         L = self.L_norm if use_normalized else self.L
         eigvals, eigvecs = np.linalg.eigh(L)
         idx = np.argsort(eigvals)
@@ -123,11 +123,11 @@ class SpectralClustering:
         self.fiedler_vector = eigvecs[:, 1]
         self.clusters = np.where(self.fiedler_vector >= 0, 1, 0)
         return self.fiedler_vector, self.clusters
-
+    
+    #------------------------------ B A S I C  S P E C T R A L  C L U S T E R I N G --------------------------------------------------#
     def pipeline(self, normalized=True, sigma=None, cosine=False):
         if sigma is not None:
             self.sigma = sigma
-        """ Pokreni cijeli postupak spektralnog klasteriranja """
         if cosine == True:
             self.compute_similarity_matrix_cosine()
         else:
@@ -139,6 +139,7 @@ class SpectralClustering:
         self.compute_fiedler_vector(use_normalized=normalized)
         return self.clusters
 
+    #------------------------------ G R A P H   V I S U A L I Z A T I O N --------------------------------------------------#
     def create_graph(self):
         G = nx.Graph()
         n = self.X.shape[0]
@@ -146,7 +147,6 @@ class SpectralClustering:
             G.add_node(i, pos=self.X[i])
         for i in range(n):
             for j in range(i + 1, n):
-                # dodavanje bridova samo ako imaju težinu """
                 if self.A[i, j] > 0.01:
                     G.add_edge(i, j, weight=self.A[i, j])
                     

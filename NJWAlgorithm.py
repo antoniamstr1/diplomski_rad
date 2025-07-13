@@ -8,80 +8,127 @@ from scipy.spatial.distance import pdist, squareform
 
 
 class SpectralClusteringNJW:
-    def __init__(self, sigma_X, max_clusters, sigma_I=None, r=None):
+    def __init__(self, max_clusters, sigma_X=None, sigma_I=None, r=None):
         self.sigma_I = sigma_I 
         self.sigma_X = sigma_X 
         self.r = r  
         self.max_clusters = max_clusters
         self.all_eigenvecs = []
+        self.data = None
+        
+        self.X = None
+        self.img = None
+        self.intensities = None
+        self.rows = None
+        self.cols = None
+        self.n = None
+        
+        self.A = None
+        self.L = None
+        
+        self.eigvals = []
+        self.eigvecs = []
+        
+        self.X = None
+        self.Y = None
 
-    def load_image(self, image_path):
-        self.img = io.imread(image_path, as_gray=True).astype(np.float64)
-        self.img *= 255
-        self.img = np.clip(self.img, 0, 255)
-        self.rows, self.cols = self.img.shape
-        self.X = np.array([(i, j) for i in range(self.rows) for j in range(self.cols)])
-        self.intensities = self.img.flatten()
-        self.n = self.X.shape[0]
-        self.clusters = np.zeros(self.n, dtype=int) 
+    #-------------------------------------------------- D A T A  L O A D I N G --------------------------------------------------#
+    def load_data(self, data, mode):
+        if mode == 'image':
+            self.img = io.imread(data, as_gray=True).astype(np.float64)
+            self.img *= 255
+            self.img = np.clip(self.img, 0, 255)
+            self.rows, self.cols = self.img.shape
+            self.data = np.array([(i, j) for i in range(self.rows) for j in range(self.cols)])
+            self.intensities = self.img.flatten()
+            self.n = self.data.shape[0]
+        elif mode == 'points':
+            self.data = np.array(data)
+            self.n = self.data.shape[0]
+            self.rows = 1
+            self.cols = self.n
+        else:
+            raise ValueError(f"Unknown mode '{mode}'. Supported modes: 'image', 'None'")
+
+        self.clusters = np.zeros(self.n, dtype=int)
         return self
+    
+        #-------------------------------------------------- S I M I L A R I T Y  M A T R I X --------------------------------------------------#
+    def compute_similarity_matrix(self, mode):
+        A = np.zeros((self.n, self.n))
 
-    """ 1.KORAK """
-    def compute_similarity_matrix(self):
-        W = np.zeros((self.n, self.n)) 
-        r_sq = self.r**2
-        for i in range(self.n):
-            for j in range(i + 1, self.n):
-                spatial_dist_sq = np.linalg.norm(self.X[i] - self.X[j])
-                if spatial_dist_sq < r_sq:
-                    if self.intensities is not None:
-                        intensity_diff_sq = (
-                            np.linalg.norm(self.intensities[i] - self.intensities[j])
-                            ** 2
-                        )
-                    else:
-                        intensity_diff_sq = 0 
-                    w_ij = np.exp(-intensity_diff_sq / (self.sigma_I**2)) * np.exp(
-                        -(spatial_dist_sq**2) / (self.sigma_X**2)
-                    )
-                    W[i, j] = w_ij
-                    W[j, i] = w_ij
+        if mode == 'image':
+            r_sq = self.r ** 2
+            for i in range(self.n):
+                for j in range(i + 1, self.n):
+                    spatial_dist_sq = np.linalg.norm(self.data[i] - self.data[j])
+                    if spatial_dist_sq < r_sq:
+                        intensity_diff_sq = np.linalg.norm(self.intensities[i] - self.intensities[j]) ** 2
+                        w_ij = np.exp(-intensity_diff_sq / (self.sigma_I ** 2)) * \
+                            np.exp(-spatial_dist_sq**2 / (self.sigma_X ** 2))
+                        A[i, j] = w_ij
+                        A[j, i] = w_ij
 
-        self.W = W
+        elif mode == 'gauss':
+            A = np.zeros((self.n, self.n))
+            distances = squareform(pdist(self.data))
+            A = np.exp(-(distances**2) / (2 * self.sigma_X**2))
+            for i in range(self.n):
+                for j in range(i + 1, self.n):
+                    dist_sq = np.linalg.norm(self.data[i] - self.data[j]) ** 2
+                    w_ij = np.exp(-dist_sq / (2 * self.sigma_X**2))
+                    A[i, j] = w_ij
+                    A[j, i] = w_ij
+                    
+        elif mode == 'cosine':
+            distances = squareform(pdist(self.data, metric='cosine'))
+            A = 1 - distances
+
+        else:
+            raise ValueError(f"Unknown mode '{mode}'. Supported modes: 'rgb+xy', '2d-gauss', 'nd-cosine'.")
+
+        np.fill_diagonal(A, 0)
+        self.A = A
         return self
-
-    """ 2.KORAK """
-    def compute_laplacian(self, W=None):
-        if W is None:
-            W = self.W
-        D = np.diag(np.sum(W, axis=1))
+    
+    
+    #------------------------------N O R M A L I Z E D    L A P L A C I A N --------------------------------------------------#
+    def compute_laplacian(self, A=None):
+        if A is None:
+            A = self.A
+        D = np.diag(np.sum(A, axis=1))
         D_inv_sqrt = np.diag([1.0 / np.sqrt(d) if d != 0 else 0 for d in np.diag(D)]) 
-        self.Laplacian = D_inv_sqrt @ (D - W) @ D_inv_sqrt
-        #return D_inv_sqrt @ (D-w)) @ D_inv_sqrt
-        return D_inv_sqrt @ W @ D_inv_sqrt
+        self.L = D_inv_sqrt @ (D - A) @ D_inv_sqrt
+        return self.L
+    
 
+    #------------------------------  E I G E N V E C T O R S --------------------------------------------------#
     def compute_k_eigenvectors(self):
-        L = self.compute_laplacian(self.W)
+        L = self.compute_laplacian(self.A)
 
         self.eigvals, self.eigvecs = np.linalg.eigh(L)
-        self.all_eigenvecs.append(self.eigvecs)
-        """ 3/4.KORAK """
-        #self.X = self.eigvecs[:, : self.max_clusters]
-        idx = np.argsort(self.eigvals)[::-1]  # descending
-        eigvecs = self.eigvecs[:, idx]
-        self.X = eigvecs[:, :self.max_clusters]
+        self.X = self.eigvecs[:, : self.max_clusters]
         self.Y = self.X / np.linalg.norm(self.X, axis=1, keepdims=True)
 
         return self.Y
 
     def segment_image(self):
         self.compute_similarity_matrix()
-        """ 5.KORAK """
         Z = self.compute_k_eigenvectors()
         customKmeans = KMeansCustom(self.max_clusters, Z)
         self.clusters, _ = customKmeans.pipeline()
         return np.array(self.clusters).reshape((self.rows, self.cols))
 
+    #-------------------------------------------------- S E G M E T A T I O N --------------------------------------------------#
+    def segment(self, data, mode, similarity_type):
+        self.load_data(data, mode=mode)
+        self.compute_similarity_matrix(mode=similarity_type)
+        Z = self.compute_k_eigenvectors()
+        customKmeans = KMeansCustom(self.max_clusters, Z)
+        self.clusters, _ = customKmeans.pipeline()
+        return np.array(self.clusters).reshape((self.rows, self.cols))
+    
+    #-------------------------------------------------- A V E R A G E  C O L O R --------------------------------------------------#
     def average_color(self):
         self.segmented_img = np.array(self.clusters).reshape((self.rows, self.cols))
 
@@ -105,86 +152,11 @@ class SpectralClusteringNJW:
 
         return cmap
 
-    def visualize(self):
-        self.segmented_img = np.array(self.clusters).reshape((self.rows, self.cols))
-        fig, axs = plt.subplots(1, 2, figsize=(12, 6))
-        cmap_custom = self.average_color()
-        axs[0].imshow(self.img, cmap="gray")
-        axs[0].set_title("Original")
-        axs[0].axis("off")
-        axs[1].imshow(self.segmented_img, cmap=cmap_custom)
-        axs[1].set_title("Spectralno Grupiranje NJW")
-        axs[1].axis("off")
-
-        plt.tight_layout()
-        plt.show()
-
-    def load_2d_data(self, data_2d):
-        self.X = np.array(data_2d)
-        self.n = self.X.shape[0]
-        self.rows, self.cols = 1, self.n
-        return self
-
-    def compute_similarity_matrix_2d_gauss(self):
-        W = np.zeros((self.n, self.n))
-        distances = squareform(pdist(self.X))
-        A = np.exp(-(distances**2) / (2 * self.sigma_X**2))
-        for i in range(self.n):
-            for j in range(i + 1, self.n):
-                dist_sq = np.linalg.norm(self.X[i] - self.X[j]) ** 2
-                w_ij = np.exp(-dist_sq / (2 * self.sigma_X**2))
-                W[i, j] = w_ij
-                W[j, i] = w_ij
-        np.fill_diagonal(W, 0)
-        self.W = W
-        return self
-
-    def segment_2d(self, data):
-        self.load_2d_data(data)
-        self.compute_similarity_matrix_2d_gauss()
-        Z = self.compute_k_eigenvectors()
-        customKmeans = KMeansCustom(self.max_clusters, Z)
-        self.clusters, _ = customKmeans.pipeline()
-        return np.array(self.clusters).reshape((self.rows, self.cols))
-
-    def compute_similarity_matrix_nd_gauss(self):
-        distances = squareform(pdist(self.X))
-        W = np.exp(-(distances**2) / (2 * self.sigma_X**2))
-        np.fill_diagonal(W, 0)
-        self.W = W
-        return self
-
-    def compute_similarity_matrix_nd_cosine(self):
-        distances = squareform(pdist(self.X, metric="cosine"))
-        W = 1 - distances
-        np.fill_diagonal(W, 0)
-        self.W = W
-        return self
-
-    def segment_3d(self, data, cosine = None):
-        self.load_2d_data(data)
-        if cosine is not None:
-            self.compute_similarity_matrix_nd_cosine()
-        else:
-            self.compute_similarity_matrix_nd_gauss()
-        Z = self.compute_k_eigenvectors()
-        customKmeans = KMeansCustom(self.max_clusters, Z)
-        self.clusters, _ = customKmeans.pipeline()
-        print()
-        return np.array(self.clusters).reshape((self.rows, self.cols))
-
+    #-------------------------------------------------- 3 D   V I S U A L I Z A T I O N --------------------------------------------------#
     def visualize_3d_clusters(self):
-
         fig = plt.figure(figsize=(5, 4))
         ax = fig.add_subplot(111, projection="3d")
-        scatter = ax.scatter(
-            self.X[:, 0],
-            self.X[:, 1],
-            self.X[:, 2],
-            c=self.clusters,
-            cmap="viridis",
-            s=50,
-        )
+        scatter = ax.scatter(self.Y[:, 0], self.Y[:, 1], self.Y[:, 2], c=self.clusters, cmap="viridis", s=50)
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
